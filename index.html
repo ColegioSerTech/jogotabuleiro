@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grande Jogo de Tabuleiro: Danças do Mundo</title>
+    <!-- Tailwind CSS para um design moderno e responsivo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fontes do Google -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@300..700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Fredoka', 'Outfit', sans-serif;
+            background: radial-gradient(circle, #1e1b4b 0%, #030712 100%);
+            user-select: none;
+            -webkit-user-select: none;
+            overflow: hidden;
+        }
+        .board-tile {
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .active-tap:active {
+            transform: scale(0.95);
+        }
+        /* Animações de rotação do dado */
+        @keyframes roll {
+            0% { transform: rotate(0deg) scale(1); }
+            50% { transform: rotate(180deg) scale(1.2); }
+            100% { transform: rotate(360deg) scale(1); }
+        }
+        .animate-roll {
+            animation: roll 0.6s ease-out-in;
+        }
+    </style>
+</head>
+<body class="text-white min-h-screen flex flex-col justify-between p-3 md:p-6 select-none">
+
+    <!-- ÁUDIO SINTETIZADO (Web Audio API para efeitos sonoros) -->
+    <script>
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playSound(type) {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            if (type === 'click') {
+                osc.frequency.setValueAtTime(450, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(900, audioCtx.currentTime + 0.08);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.1);
+            } else if (type === 'dice') {
+                // Som de dado a rolar (frequência rápida modulada)
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+                osc.frequency.linearRampToValueAtTime(300, audioCtx.currentTime + 0.2);
+                osc.frequency.linearRampToValueAtTime(100, audioCtx.currentTime + 0.4);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.5);
+            } else if (type === 'success') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // Dó
+                osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1); // Mi
+                osc.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.2); // Sol
+                osc.frequency.setValueAtTime(1046.50, audioCtx.currentTime + 0.3); // Dó Alto
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.5);
+            } else if (type === 'wrong') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(180, audioCtx.currentTime);
+                osc.frequency.linearRampToValueAtTime(90, audioCtx.currentTime + 0.3);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.4);
+            } else if (type === 'tick') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.06);
+            }
+        }
+    </script>
+
+    <!-- CABEÇALHO DO JOGO -->
+    <header class="text-center py-1 md:py-2 shrink-0">
+        <h1 class="text-3xl md:text-5xl font-black tracking-wider text-yellow-400 drop-shadow-[0_4px_0_rgba(244,63,94,1)]">
+            TABULEIRO DOS RITMOS 🎲🌍
+        </h1>
+        <p class="text-cyan-300 font-medium text-xs md:text-base mt-1">
+            Reúne a tua equipa, lança o dado e dança pelo mundo fora!
+        </p>
+    </header>
+
+    <!-- ÁREA PRINCIPAL: DIVIDIDA ENTRE TABULEIRO E PAINEL DE CONTROLO -->
+    <main id="app-container" class="flex-grow flex flex-col lg:flex-row justify-center items-center gap-4 max-w-7xl mx-auto w-full my-2 overflow-hidden px-2">
+        <!-- O conteúdo dinâmico do tabuleiro e jogo será injetado aqui pelo JS -->
+    </main>
+
+    <!-- RODAPÉ -->
+    <footer class="text-center text-[10px] md:text-xs text-slate-500 pt-2 border-t border-slate-900 shrink-0">
+        <p>Criado para Ecrãs Interativos Escolares • 3º Ano do Ensino Básico • Tema: Danças do Mundo</p>
+    </footer>
+
+    <!-- MODAL DE DESAFIOS (CONHECIMENTO, MOVIMENTO, ASSOCIAÇÃO) -->
+    <div id="challenge-modal" class="fixed inset-0 bg-black/90 backdrop-blur-md hidden flex items-center justify-center p-4 z-50">
+        <div id="challenge-card" class="bg-slate-900 border-4 border-yellow-400 p-6 md:p-8 rounded-3xl max-w-2xl w-full text-center relative shadow-2xl">
+            <!-- Conteúdo injetado conforme o desafio -->
+        </div>
+    </div>
+
+    <!-- SCRIPT DE LÓGICA DO TABULEIRO -->
+    <script>
+        // Definição das casas do tabuleiro (12 casas no total, formando um caminho de aprendizagem)
+        const boardSpaces = [
+            { id: 0, type: 'start', name: 'Partida 🚀', color: 'bg-indigo-600 border-indigo-400', desc: 'Ponto de partida da nossa viagem!' },
+            { id: 1, type: 'dance', danceId: 'frevo', name: 'Frevo 🇧🇷', color: 'bg-emerald-600 border-emerald-400', emoji: '☂️', desc: 'Passos super rápidos com sombrinha!' },
+            { id: 2, type: 'bonus', name: 'Ritmo Extra! ⚡', color: 'bg-yellow-500 border-yellow-300', desc: 'Avança 1 casa!' },
+            { id: 3, type: 'dance', danceId: 'gumboot', name: 'Gumboot 🇿🇦', color: 'bg-amber-600 border-amber-400', emoji: '👢', desc: 'Sons incríveis com botas de borracha!' },
+            { id: 4, type: 'special', name: 'Pausa para Água 💧', color: 'bg-sky-600 border-sky-400', desc: 'Fica 1 jogada sem jogar para descansar as pernas.' },
+            { id: 5, type: 'dance', danceId: 'haka', name: 'Haka 🇳🇿', color: 'bg-rose-600 border-rose-400', emoji: '👹', desc: 'Força e expressão do povo Māori!' },
+            { id: 6, type: 'challenge', name: 'Desafio Rápido 🧠', color: 'bg-purple-600 border-purple-400', desc: 'Associa os elementos sagrados!' },
+            { id: 7, type: 'dance', danceId: 'ballet', name: 'Ballet 🇫🇷', color: 'bg-pink-600 border-pink-400', emoji: '🩰', desc: 'Leveza e giros na ponta dos pés!' },
+            { id: 8, type: 'dance', danceId: 'swing', name: 'Swing 🇺🇸', color: 'bg-cyan-600 border-cyan-400', emoji: '🎷', desc: 'Ritmo saltitante cheio de Jazz!' },
+            { id: 9, type: 'bonus', name: 'Vento a Favor 🍃', color: 'bg-teal-500 border-teal-300', desc: 'Avança 2 casas!' },
+            { id: 10, type: 'dance', danceId: 'leao', name: 'Dança do Leão 🇨🇳', color: 'bg-red-600 border-red-400', emoji: '🦁', desc: 'Acrobacias chinesas para dar sorte!' },
+            { id: 11, type: 'meta', name: 'Meta Real! 👑', color: 'bg-gradient-to-r from-yellow-500 to-amber-500 border-yellow-300', desc: 'Fim da viagem!' }
+        ];
+
+        // Detalhes dos desafios de cada dança
+        const danceDetails = {
+            frevo: {
+                name: 'Frevo',
+                emoji: '☂️🕺',
+                quiz: {
+                    q: "Qual é o principal objeto colorido que os bailarinos de Frevo usam para se equilibrar?",
+                    options: ["Uma Sombrinha", "Um Pandeiro", "Um Chapéu de Palha", "Um Lenço"],
+                    correct: 0
+                },
+                movement: {
+                    title: "Passo da Tesoura! ✂️",
+                    desc: "Toda a equipa deve cruzar e descruzar as pernas rapidamente no chão como se fossem tesouras! Aguentem durante o tempo do cronómetro!",
+                    duration: 10
+                }
+            },
+            gumboot: {
+                name: 'Gumboot Dance',
+                emoji: '👢🥁',
+                quiz: {
+                    q: "Por que motivo os mineradores criaram a dança Gumboot na África do Sul?",
+                    options: ["Para festejar a chuva", "Para comunicarem e fazerem música", "Porque as botas eram muito leves", "Para treinar corrida"],
+                    correct: 1
+                },
+                movement: {
+                    title: "Bate e Salta! 👢",
+                    desc: "Batendo com as mãos nas coxas e depois nos pés simulando o barulho das botas de borracha! Façam muito barulho!",
+                    duration: 10
+                }
+            },
+            haka: {
+                name: 'Haka',
+                emoji: '👹💪',
+                quiz: {
+                    q: "Qual é o nome do povo indígena da Nova Zelândia que criou a Haka?",
+                    options: ["Povo Asteca", "Povo Viking", "Povo Māori", "Povo Samurai"],
+                    correct: 2
+                },
+                movement: {
+                    title: "Expressão Máxima (Pukana)! 👹",
+                    desc: "Arregalem bem os olhos, batam com as mãos no peito e ponham a língua para fora como guerreiros corajosos!",
+                    duration: 8
+                }
+            },
+            ballet: {
+                name: 'Ballet',
+                emoji: '🩰🦢',
+                quiz: {
+                    q: "Como conseguem as bailarinas de Ballet clássico ficar tão altas durante as apresentações?",
+                    options: ["Usando sapatilhas especiais de ponta", "Usando sapatos de salto alto", "Dando saltos com molas", "Andando em cima de caixas"],
+                    correct: 0
+                },
+                movement: {
+                    title: "Equilíbrio de Cisne! 🦢",
+                    desc: "Toda a equipa deve ficar apoiada apenas num pé, com os braços abertos como asas, sem cair até o tempo terminar!",
+                    duration: 12
+                }
+            },
+            swing: {
+                name: 'Swing',
+                emoji: '🎷🕺',
+                quiz: {
+                    q: "Com que estilo de música alegre e cheia de sopros se dança o Swing?",
+                    options: ["Música Clássica", "Música Jazz", "Rock Pesado", "Ópera"],
+                    correct: 1
+                },
+                movement: {
+                    title: "Chutos do Swing! 🕺",
+                    desc: "Deem pequenos chutos alegres para o lado, alternando as pernas ao ritmo do Jazz imaginário!",
+                    duration: 10
+                }
+            },
+            leao: {
+                name: 'Dança do Leão',
+                emoji: '🦁🏮',
+                quiz: {
+                    q: "Quantos bailarinos são necessários dentro de cada fantasia para dar vida ao Leão Chinês?",
+                    options: ["Apenas 1", "Exatamente 2", "Mais de 10", "Nenhum, é um robô"],
+                    correct: 1
+                },
+                movement: {
+                    title: "Salto do Leão! 🦁",
+                    desc: "Imitem a postura de um leão agachado e deem pequenos saltos coordenados juntos, como se estivessem a saltar sobre postes!",
+                    duration: 10
+                }
+            }
+        };
+
+        // Estado Global do Jogo de Tabuleiro
+        let gameState = {
+            teams: {
+                sol: { name: "Equipa Sol ☀️", position: 0, color: "bg-amber-400", border: "border-amber-500", text: "text-amber-400" },
+                lua: { name: "Equipa Lua 🌙", position: 0, color: "bg-cyan-400", border: "border-cyan-500", text: "text-cyan-400" }
+            },
+            currentTurn: 'sol', // 'sol' ou 'lua'
+            isRolling: false,
+            skipTurn: { sol: false, lua: false },
+            winner: null
+        };
+
+        // Função de Inicialização
+        function initApp() {
+            render();
+            showWelcomeMessage();
+        }
+
+        function showWelcomeMessage() {
+            // Modal de introdução ao jogo de tabuleiro em equipas
+            showModal(`
+                <h3 class="text-3xl font-black text-yellow-400 mb-4">Grande Tabuleiro das Danças! 🎲🌍</h3>
+                <p class="text-slate-200 text-lg mb-6 leading-relaxed">
+                    Dividam a turma em duas grandes equipas: a <strong>Equipa Sol ☀️</strong> e a <strong>Equipa Lua 🌙</strong>!<br><br>
+                    Lancem o dado no ecrã interativo, avancem no tabuleiro e completem os desafios em conjunto para chegar à grande Meta!
+                </p>
+                <button onclick="closeModal()" class="active-tap bg-gradient-to-r from-yellow-400 to-amber-500 text-slate-950 font-bold px-8 py-3 rounded-full text-lg shadow-lg border-b-4 border-amber-700">
+                    Começar o Jogo! 🚀
+                </button>
+            `);
+        }
+
+        // Renderizador da Interface
+        function render() {
+            const container = document.getElementById('app-container');
+            container.innerHTML = '';
+
+            // 1. ÁREA DO TABULEIRO (Lado Esquerdo / Centro)
+            const boardContainer = document.createElement('div');
+            boardContainer.className = "w-full lg:w-2/3 bg-slate-900/60 border-4 border-slate-950 rounded-3xl p-4 flex flex-col justify-between h-[500px] relative";
+            
+            // Desenho do Grid do Tabuleiro (Caminho em S ou Anel adaptado para o ecrã)
+            let tilesHTML = '';
+            boardSpaces.forEach((space, index) => {
+                // Verifica quais equipas estão nesta casa
+                const hasSol = gameState.teams.sol.position === index;
+                const hasLua = gameState.teams.lua.position === index;
+
+                let piecesHTML = '';
+                if (hasSol) {
+                    piecesHTML += `<span class="w-7 h-7 rounded-full bg-amber-400 border-2 border-slate-950 flex items-center justify-center text-xs font-black shadow-md animate-bounce">☀️</span>`;
+                }
+                if (hasLua) {
+                    piecesHTML += `<span class="w-7 h-7 rounded-full bg-cyan-400 border-2 border-slate-950 flex items-center justify-center text-xs font-black shadow-md animate-bounce">🌙</span>`;
+                }
+
+                tilesHTML += `
+                    <div class="board-tile ${space.color} border-4 rounded-2xl p-2 flex flex-col justify-between items-center text-center relative min-h-[95px] shadow-lg">
+                        <span class="absolute top-1 left-2 text-[10px] font-black text-white/40">${index}</span>
+                        <div class="flex-grow flex flex-col justify-center items-center">
+                            <span class="text-xl">${space.emoji || ''}</span>
+                            <h4 class="text-xs font-black leading-tight mt-1 text-white">${space.name}</h4>
+                        </div>
+                        <!-- Contentores das peças das Equipas -->
+                        <div class="flex gap-1 justify-center items-center mt-1 h-7">
+                            ${piecesHTML}
+                        </div>
+                    </div>
+                `;
+            });
+
+            boardContainer.innerHTML = `
+                <div class="grid grid-cols-4 gap-3 h-full w-full">
+                    ${tilesHTML}
+                </div>
+            `;
+
+            // 2. PAINEL DE CONTROLO DO JOGO (Lado Direito)
+            const controlContainer = document.createElement('div');
+            controlContainer.className = "w-full lg:w-1/3 flex flex-col gap-4";
+
+            const activeTeam = gameState.teams[gameState.currentTurn];
+            const otherTeamKey = gameState.currentTurn === 'sol' ? 'lua' : 'sol';
+            const otherTeam = gameState.teams[otherTeamKey];
+
+            controlContainer.innerHTML = `
+                <!-- Cartão da Turno Ativo -->
+                <div class="bg-slate-900 border-4 border-slate-950 rounded-3xl p-5 text-center shadow-2xl relative">
+                    <span class="bg-yellow-400 text-slate-950 font-black px-4 py-1 rounded-full text-xs uppercase tracking-wider">
+                        Turno Atual
+                    </span>
+                    <h2 class="text-3xl font-black mt-3 ${activeTeam.text}">${activeTeam.name}</h2>
+                    <p class="text-slate-300 text-sm mt-1">É a vossa vez de brilhar na dança!</p>
+
+                    <!-- Dado Gigante Interativo -->
+                    <div class="my-6 flex justify-center">
+                        <button id="dice-btn" onclick="rollDice()" class="active-tap w-28 h-28 bg-gradient-to-br from-white to-slate-200 border-4 border-slate-950 text-slate-950 font-black text-5xl rounded-3xl flex items-center justify-center shadow-2xl hover:scale-105 transition duration-150 relative">
+                            <span id="dice-value">🎲</span>
+                        </button>
+                    </div>
+
+                    <p class="text-xs text-slate-400">Toca no dado para rolar e avançar!</p>
+                </div>
+
+                <!-- Painel de Posições e Progresso -->
+                <div class="bg-slate-900/80 border-2 border-slate-800 rounded-3xl p-4">
+                    <h4 class="font-bold text-sm text-slate-400 uppercase tracking-wider mb-2">Posições no Tabuleiro</h4>
+                    <div class="flex flex-col gap-2">
+                        <div class="flex justify-between items-center bg-slate-950/40 p-2 rounded-xl">
+                            <span class="font-bold text-amber-400">☀️ Equipa Sol:</span>
+                            <span class="bg-amber-400/20 px-3 py-1 rounded-full text-amber-300 font-bold text-xs">Casa ${gameState.teams.sol.position}</span>
+                        </div>
+                        <div class="flex justify-between items-center bg-slate-950/40 p-2 rounded-xl">
+                            <span class="font-bold text-cyan-400">🌙 Equipa Lua:</span>
+                            <span class="bg-cyan-400/20 px-3 py-1 rounded-full text-cyan-300 font-bold text-xs">Casa ${gameState.teams.lua.position}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            container.appendChild(boardContainer);
+            container.appendChild(controlContainer);
+        }
+
+        // --- AÇÃO: LANÇAR O DADO ---
+        function rollDice() {
+            if (gameState.isRolling || gameState.winner) return;
+
+            gameState.isRolling = true;
+            playSound('dice');
+
+            const diceBtn = document.getElementById('dice-btn');
+            const diceVal = document.getElementById('dice-value');
+            
+            // Adiciona animação de rotação
+            diceBtn.classList.add('animate-roll');
+
+            let count = 0;
+            const diceFaces = ['1', '2', '3', '4', '1', '2']; // Ajustado para dar mais chance de passos menores (ideal para tabuleiro curto de 12 casas)
+            
+            const interval = setInterval(() => {
+                diceVal.innerText = diceFaces[Math.floor(Math.random() * diceFaces.length)];
+                count++;
+                if (count > 8) {
+                    clearInterval(interval);
+                    
+                    // Resultado final do dado (1 a 4)
+                    const rolledValue = Math.floor(Math.random() * 3) + 1; // Resultados equilibrados: 1, 2 ou 3
+                    diceVal.innerText = rolledValue;
+                    diceBtn.classList.remove('animate-roll');
+
+                    setTimeout(() => {
+                        moveActiveTeam(rolledValue);
+                    }, 600);
+                }
+            }, 800 / 8);
+        }
+
+        // --- MOVIMENTAÇÃO DA EQUIPA ---
+        function moveActiveTeam(steps) {
+            const teamKey = gameState.currentTurn;
+            const team = gameState.teams[teamKey];
+            
+            let targetPosition = team.position + steps;
+            
+            // Proteção contra ultrapassar o fim do tabuleiro
+            if (targetPosition >= boardSpaces.length - 1) {
+                targetPosition = boardSpaces.length - 1;
+            }
+
+            team.position = targetPosition;
+            render();
+
+            setTimeout(() => {
+                handleLandingSpace(targetPosition);
+            }, 800);
+        }
+
+        // --- TRATAMENTO DA CASA ONDE ATERROU ---
+        function handleLandingSpace(position) {
+            const space = boardSpaces[position];
+            const teamKey = gameState.currentTurn;
+            const team = gameState.teams[teamKey];
+
+            switch (space.type) {
+                case 'start':
+                    nextTurn();
+                    break;
+                case 'dance':
+                    triggerDanceChallenge(space.danceId);
+                    break;
+                case 'bonus':
+                    playSound('success');
+                    showModal(`
+                        <div class="text-center">
+                            <span class="text-5xl">⚡</span>
+                            <h3 class="text-2xl font-black text-yellow-400 mt-4">${space.name}</h3>
+                            <p class="text-slate-200 my-4">${space.desc}</p>
+                            <button onclick="applyBonus(1)" class="active-tap bg-emerald-500 text-slate-950 font-bold px-6 py-2 rounded-full">Avançar! 🚀</button>
+                        </div>
+                    `);
+                    break;
+                case 'special':
+                    playSound('wrong');
+                    gameState.skipTurn[teamKey] = true;
+                    showModal(`
+                        <div class="text-center">
+                            <span class="text-5xl">💧</span>
+                            <h3 class="text-2xl font-black text-sky-400 mt-4">${space.name}</h3>
+                            <p class="text-slate-200 my-4">${space.desc}</p>
+                            <button onclick="closeModalAndNext()" class="active-tap bg-slate-800 text-white px-6 py-2 rounded-full">Continuar</button>
+                        </div>
+                    `);
+                    break;
+                case 'challenge':
+                    triggerGlobalAssociationChallenge();
+                    break;
+                case 'meta':
+                    handleWinGame(teamKey);
+                    break;
+            }
+        }
+
+        // Aplica avanço de bónus
+        function applyBonus(steps) {
+            closeModal();
+            const teamKey = gameState.currentTurn;
+            const team = gameState.teams[teamKey];
+            team.position = Math.min(boardSpaces.length - 1, team.position + steps);
+            render();
+            
+            setTimeout(() => {
+                if (team.position === boardSpaces.length - 1) {
+                    handleWinGame(teamKey);
+                } else {
+                    nextTurn();
+                }
+            }, 500);
+        }
+
+        // --- DISPARADOR DE DESAFIOS DE DANÇA ---
+        function triggerDanceChallenge(danceId) {
+            const dance = danceDetails[danceId];
+            const teamName = gameState.teams[gameState.currentTurn].name;
+            const teamText = gameState.teams[gameState.currentTurn].text;
+
+            // Sorteia se o desafio vai ser de "Conhecimento (Quiz)" ou de "Movimento (Imitação)"
+            const challengeType = Math.random() > 0.5 ? 'quiz' : 'movement';
+
+            if (challengeType === 'quiz') {
+                // Desenha desafio de escolha múltipla (Quiz)
+                let optionsHTML = '';
+                dance.quiz.options.forEach((opt, idx) => {
+                    optionsHTML += `
+                        <button onclick="checkQuizAnswer(${idx}, ${dance.quiz.correct}, '${danceId}')" class="active-tap bg-slate-800 border-2 border-slate-700 hover:border-yellow-400 text-left p-4 rounded-2xl font-medium text-sm md:text-base transition w-full">
+                            ${opt}
+                        </button>
+                    `;
+                });
+
+                showChallengeModal(`
+                    <div class="text-center">
+                        <span class="bg-rose-500 text-slate-950 font-black px-3 py-1 rounded-full text-xs uppercase tracking-wide">Desafio de Conhecimento 🧠</span>
+                        <h3 class="text-2xl md:text-3xl font-black text-yellow-400 mt-3">${dance.name} ${dance.emoji}</h3>
+                        <p class="text-slate-300 text-sm mt-1 mb-6">Equipa ativa: <span class="font-bold ${teamText}">${teamName}</span></p>
+
+                        <div class="bg-slate-950/50 p-5 rounded-2xl border border-slate-800 mb-6">
+                            <p class="text-base md:text-lg font-bold text-white text-left">${dance.quiz.q}</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-3">
+                            ${optionsHTML}
+                        </div>
+                    </div>
+                `);
+            } else {
+                // Desafio de Movimento Físico para a turma
+                showChallengeModal(`
+                    <div class="text-center">
+                        <span class="bg-emerald-500 text-slate-950 font-black px-3 py-1 rounded-full text-xs uppercase tracking-wide">Desafio de Movimento Corporal 🕺</span>
+                        <h3 class="text-2xl md:text-3xl font-black text-yellow-400 mt-3">${dance.movement.title}</h3>
+                        <p class="text-slate-300 text-sm mt-1 mb-6">Equipa ativa: <span class="font-bold ${teamText}">${teamName}</span></p>
+
+                        <div class="bg-slate-950/50 p-6 rounded-2xl border border-slate-800 mb-6">
+                            <p class="text-base md:text-lg text-slate-200 font-medium leading-relaxed">${dance.movement.desc}</p>
+                        </div>
+
+                        <!-- Temporizador Visual -->
+                        <div class="mb-6">
+                            <div class="text-4xl font-black text-rose-500" id="movement-timer">${dance.movement.duration}s</div>
+                            <p class="text-xs text-slate-400 mt-1">Apareçam em frente ao ecrã interativo!</p>
+                        </div>
+
+                        <div class="flex gap-4">
+                            <button id="start-timer-btn" onclick="startMovementTimer(${dance.movement.duration})" class="active-tap bg-green-500 text-slate-950 font-black px-6 py-3 rounded-full flex-grow text-lg shadow-md">
+                                Iniciar Desafio! ▶
+                            </button>
+                        </div>
+                    </div>
+                `);
+            }
+        }
+
+        // --- VERIFICAÇÃO DE RESPOSTAS DO QUIZ ---
+        function checkQuizAnswer(selected, correct, danceId) {
+            const modalContainer = document.getElementById('challenge-card');
+            
+            if (selected === correct) {
+                playSound('success');
+                modalContainer.innerHTML = `
+                    <div class="text-center">
+                        <span class="text-6xl">🎉</span>
+                        <h3 class="text-3xl font-black text-green-400 my-4">Resposta Certa!</h3>
+                        <p class="text-slate-200 text-lg mb-6">Vocês são verdadeiros mestres dos ritmos do mundo!</p>
+                        <button onclick="closeModalAndNext()" class="active-tap bg-green-500 text-slate-950 font-bold px-8 py-3 rounded-full text-lg">Continuar Viagem! ✈️</button>
+                    </div>
+                `;
+            } else {
+                playSound('wrong');
+                // Se errou, recua 1 casa como penalização saudável do tabuleiro
+                const teamKey = gameState.currentTurn;
+                const team = gameState.teams[teamKey];
+                team.position = Math.max(0, team.position - 1);
+                render();
+
+                modalContainer.innerHTML = `
+                    <div class="text-center">
+                        <span class="text-6xl">😅</span>
+                        <h3 class="text-3xl font-black text-red-400 my-4">Quase lá!</h3>
+                        <p class="text-slate-200 text-lg mb-6">Não faz mal! Como penalização do tabuleiro, recuam 1 casa. Vamos aprender juntos e continuar!</p>
+                        <button onclick="closeModalAndNext()" class="active-tap bg-slate-800 text-white px-8 py-3 rounded-full text-lg">Continuar</button>
+                    </div>
+                `;
+            }
+        }
+
+        // --- CONTROLO DO TEMPORIZADOR DE MOVIMENTO ---
+        function startMovementTimer(duration) {
+            playSound('click');
+            document.getElementById('start-timer-btn').disabled = true;
+            document.getElementById('start-timer-btn').classList.add('opacity-50');
+
+            let timeLeft = duration;
+            const timerEl = document.getElementById('movement-timer');
+
+            const countdown = setInterval(() => {
+                timeLeft--;
+                if (timeLeft >= 0) {
+                    timerEl.innerText = timeLeft + 's';
+                    playSound('tick');
+                }
+
+                if (timeLeft <= 0) {
+                    clearInterval(countdown);
+                    // Sucesso automático por tentarem! O professor valida o esforço
+                    playSound('success');
+                    const modalContainer = document.getElementById('challenge-card');
+                    modalContainer.innerHTML = `
+                        <div class="text-center">
+                            <span class="text-6xl">🕺🔥</span>
+                            <h3 class="text-3xl font-black text-green-400 my-4">Excelente Movimento!</h3>
+                            <p class="text-slate-200 text-lg mb-6">A vossa equipa mostrou um ritmo fantástico em frente ao ecrã!</p>
+                            <button onclick="closeModalAndNext()" class="active-tap bg-green-500 text-slate-950 font-bold px-8 py-3 rounded-full text-lg">Próxima Jogada!</button>
+                        </div>
+                    `;
+                }
+            }, 1000);
+        }
+
+        // --- DESAFIO ESPECIAL: ASSOCIAÇÃO GERAL (CASA 6) ---
+        function triggerGlobalAssociationChallenge() {
+            const teamName = gameState.teams[gameState.currentTurn].name;
+            
+            showChallengeModal(`
+                <div class="text-center">
+                    <span class="bg-purple-500 text-slate-950 font-black px-3 py-1 rounded-full text-xs uppercase tracking-wide">Desafio Especial de Associação 🧠</span>
+                    <h3 class="text-2xl font-black text-yellow-400 mt-3">Ligue os Elementos Sagrados!</h3>
+                    <p class="text-slate-300 text-sm mt-1 mb-6">Para passar esta casa, toque na dança que usa as <strong>Galocha de Borracha (Botas)</strong>!</p>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <button onclick="checkAssociation('ballet', false)" class="active-tap bg-slate-800 p-4 rounded-xl font-bold hover:border-red-500 border-2 border-transparent">🩰 Ballet Clássico</button>
+                        <button onclick="checkAssociation('gumboot', true)" class="active-tap bg-slate-800 p-4 rounded-xl font-bold hover:border-green-500 border-2 border-transparent">👢 Gumboot Dance</button>
+                        <button onclick="checkAssociation('haka', false)" class="active-tap bg-slate-800 p-4 rounded-xl font-bold hover:border-red-500 border-2 border-transparent">👹 Haka Māori</button>
+                        <button onclick="checkAssociation('frevo', false)" class="active-tap bg-slate-800 p-4 rounded-xl font-bold hover:border-red-500 border-2 border-transparent">☂️ Frevo Pernambucano</button>
+                    </div>
+                </div>
+            `);
+        }
+
+        function checkAssociation(choice, isCorrect) {
+            const modalContainer = document.getElementById('challenge-card');
+            if (isCorrect) {
+                playSound('success');
+                modalContainer.innerHTML = `
+                    <div class="text-center">
+                        <span class="text-6xl">⭐</span>
+                        <h3 class="text-3xl font-black text-yellow-400 my-4">Associação Perfeita!</h3>
+                        <p class="text-slate-200 text-base mb-6">Exatamente! As galochas de borracha são o símbolo máximo da dança Gumboot!</p>
+                        <button onclick="closeModalAndNext()" class="active-tap bg-green-500 text-slate-950 font-bold px-8 py-3 rounded-full">Continuar</button>
+                    </div>
+                `;
+            } else {
+                playSound('wrong');
+                modalContainer.innerHTML = `
+                    <div class="text-center">
+                        <span class="text-6xl">❌</span>
+                        <h3 class="text-2xl font-black text-red-400 my-4">Quase... Tentem outra vez!</h3>
+                        <p class="text-slate-200 text-sm mb-6">Lembra-te: as botas de borracha serviam para fazer percussão debaixo da terra!</p>
+                        <button onclick="triggerGlobalAssociationChallenge()" class="active-tap bg-slate-800 text-white px-6 py-2 rounded-full">Tentar Novamente</button>
+                    </div>
+                `;
+            }
+        }
+
+        // --- SISTEMA DE TURNOS ---
+        function nextTurn() {
+            gameState.isRolling = false;
+            
+            // Alterna turno
+            const nextTeamKey = gameState.currentTurn === 'sol' ? 'lua' : 'sol';
+            gameState.currentTurn = nextTeamKey;
+
+            // Verifica se a nova equipa tem de saltar o turno (Pausa para Água)
+            if (gameState.skipTurn[nextTeamKey]) {
+                gameState.skipTurn[nextTeamKey] = false; // consome o bloqueio
+                showModal(`
+                    <div class="text-center">
+                        <span class="text-5xl">💧</span>
+                        <h3 class="text-2xl font-black text-sky-400 mt-4">Pausa da Equipa!</h3>
+                        <p class="text-slate-200 my-4">A <strong>${gameState.teams[nextTeamKey].name}</strong> está a beber água nesta ronda e salta a jogada!</p>
+                        <button onclick="closeModalAndNext()" class="active-tap bg-slate-800 text-white px-6 py-2 rounded-full">Entendido</button>
+                    </div>
+                `);
+            } else {
+                render();
+            }
+        }
+
+        // --- VITORIA DO JOGO ---
+        function handleWinGame(winnerKey) {
+            gameState.winner = winnerKey;
+            playSound('success');
+
+            const winnerTeam = gameState.teams[winnerKey];
+
+            showModal(`
+                <div class="text-center">
+                    <span class="text-7xl animate-bounce-slow">🏆👑</span>
+                    <h2 class="text-3xl md:text-4xl font-black text-yellow-400 mt-4">Temos Campeões!</h2>
+                    <p class="text-xl text-slate-200 my-4">Parabéns à <strong>${winnerTeam.name}</strong> por completar o Tabuleiro dos Ritmos!</p>
+                    <p class="text-sm text-slate-300 mb-6">Todos os alunos fizeram um excelente trabalho de equipa e expressão corporal.</p>
+                    <button onclick="resetWholeGame()" class="active-tap bg-gradient-to-r from-yellow-400 to-amber-500 text-slate-950 font-black px-8 py-3 rounded-full text-lg shadow-md">
+                        Jogar Novamente 🔄
+                    </button>
+                </div>
+            `);
+        }
+
+        function resetWholeGame() {
+            gameState.teams.sol.position = 0;
+            gameState.teams.lua.position = 0;
+            gameState.currentTurn = 'sol';
+            gameState.winner = null;
+            gameState.skipTurn = { sol: false, lua: false };
+            closeModal();
+            render();
+        }
+
+        // --- SISTEMA DE MODAIS DO TABULEIRO ---
+        function showChallengeModal(htmlContent) {
+            const modal = document.getElementById('challenge-modal');
+            const card = document.getElementById('challenge-card');
+            card.innerHTML = htmlContent;
+            modal.classList.remove('hidden');
+        }
+
+        function showModal(htmlContent) {
+            showChallengeModal(htmlContent);
+        }
+
+        function closeModal() {
+            document.getElementById('challenge-modal').classList.add('hidden');
+        }
+
+        function closeModalAndNext() {
+            closeModal();
+            nextTurn();
+        }
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>
